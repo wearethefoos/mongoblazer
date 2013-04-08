@@ -9,7 +9,7 @@ module Mongoblazer
       def mongoblazed
         self.class.recreate_mongoblazer_class!
 
-        self.class.mongoblazer_class.where(ar_id: id).last
+        self.class.mongoblazer_class.where(ar_id: id, _type: self.class.mongoblazer_class_name).last
       end
 
       def mongoblaze!(caller=self.class)
