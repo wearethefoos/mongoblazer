@@ -1,0 +1,6 @@
+test:
+  sessions:
+    default:
+      hosts:
+        - <%= ENV['WERCKER'] ? "#{ENV['WERCKER_MONGODB_HOST']}:#{ENV['WERCKER_MONGODB_PORT']}" : "localhost:27017" %>
+      database: mongoblazer_test
