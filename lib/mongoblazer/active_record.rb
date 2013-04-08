@@ -21,8 +21,9 @@ module Mongoblazer
           if related = data.delete(em)
             klass = "#{em.to_s.camelize}".constantize
             if klass != caller
-              if klass.mongoblazable?
-                data[em] = klass.find(related['id']).mongoblazer_attributes(self.class)
+              related_id = related[:id] || related['id']
+              if klass.mongoblazable? && related_id
+                data[em] = klass.find(related_id).mongoblazer_attributes(self.class)
               else
                 data[em] = related
               end
@@ -36,7 +37,12 @@ module Mongoblazer
             if klass != caller
               if klass.mongoblazable?
                 data[em] = related.map do |r|
-                  klass.find(r['id']).mongoblazer_attributes(self.class)
+                  related_id = r[:id] || r['id']
+                  if related_id
+                    klass.find(related_id).mongoblazer_attributes(self.class)
+                  else
+                    related
+                  end
                 end
               else
                 data[em] = related
@@ -123,7 +129,7 @@ module Mongoblazer
       # Is this model Mongoblazable?
       #
       def mongoblazable?
-        mongoblazer_options.present?
+        mongoblazer_options[:includes].present?
       end
 
       def belongs_to(name, options={})
@@ -191,8 +197,6 @@ module Mongoblazer
             {ind => 1}
           end
 
-          @mongoblazer_options[:default_scope] = self.default_scopes
-
           @mongoblazer_options[:embeds_one]  = []
           @mongoblazer_options[:embeds_many] = []
         end
@@ -224,6 +228,10 @@ module Mongoblazer
         mongoblazer_class_name.constantize
       end
 
+      def mongoblazer_class_name
+        "#{self.name}Blazer"
+      end
+
       def recreate_mongoblazer_class!
         create_mongoblazer_class! unless mongoblazer_class.embedded_relations?
       end
@@ -236,12 +244,17 @@ module Mongoblazer
         relations  = configure_mongoblazer_relations! configuration[:embeds_one], :embeds_one
         relations += configure_mongoblazer_relations! configuration[:embeds_many], :embeds_many
 
-        klass = Class.new ::Mongoblazer::Document do
-          index ar_id: 1
+        if Object.const_defined?(mongoblazer_class_name.to_sym)
+          klass = mongoblazer_class
+        else
+          klass = Class.new ::Mongoblazer::Document do
+            index ar_id: 1
+            index _type: 1
 
-          default_scope configuration[:default_scope] if configuration[:default_scope].present?
+            default_scope configuration[:default_scope] if configuration[:default_scope].present?
 
-          configuration[:indexes].each { |ind| index ind }
+            configuration[:indexes].each { |ind| index ind }
+          end
         end
 
         klass.class_eval relations.join("\n")
@@ -277,10 +290,6 @@ module Mongoblazer
             CODE
           end
         end
-      end
-
-      def mongoblazer_class_name
-        "#{self.name}Blazer"
       end
     end
   end

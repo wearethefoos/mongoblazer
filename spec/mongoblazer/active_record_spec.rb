@@ -20,7 +20,7 @@ describe Mongoblazer::ActiveRecord do
 
     context "options" do
       subject { EnabledInParent.mongoblazer_options }
-      it { should eq({:indexes=>[], :default_scope=>[], :embeds_one=>[], :embeds_many=>[:posts], :includes=>{:posts=>[{:comments=>:user}, :tags]}}) }
+      it { should eq({:indexes=>[], :embeds_one=>[], :embeds_many=>[:posts], :includes=>{:posts=>[{:comments=>:user}, :tags]}}) }
     end
   end
 
@@ -71,7 +71,7 @@ describe Mongoblazer::ActiveRecord do
 
       context "options" do
         subject { WithEnabledRelation.mongoblazer_options }
-        it { should eq({:indexes=>[], :default_scope=>[], :embeds_one=>[], :embeds_many=>[:related_enableds], :includes=>:related_enableds}) }
+        it { should eq({:indexes=>[], :embeds_one=>[], :embeds_many=>[:related_enableds], :includes=>:related_enableds}) }
       end
 
       context "relations" do
