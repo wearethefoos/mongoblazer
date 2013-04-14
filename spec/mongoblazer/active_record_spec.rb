@@ -20,7 +20,7 @@ describe Mongoblazer::ActiveRecord do
 
     context "options" do
       subject { EnabledInParent.mongoblazer_options }
-      it { should eq({:indexes=>[], :embeds_one=>[], :embeds_many=>[:posts], :includes=>{:posts=>[{:comments=>:user}, :tags]}}) }
+      it { should eq({:indexes=>[], :uploaders=>[], :embeds_one=>{}, :embeds_many=>{:posts=>nil}, :includes=>{:posts=>[{:comments=>:user}, :tags]}, :additional_attributes=>[:additional]}) }
     end
   end
 
@@ -46,7 +46,7 @@ describe Mongoblazer::ActiveRecord do
       subject { enabled.mongoblazed }
 
       it "should contain a post" do
-        subject.posts.size.should eq 1
+        subject.posts.size.should be 1
       end
 
       context "related data" do
@@ -55,6 +55,14 @@ describe Mongoblazer::ActiveRecord do
         its(:title)   { should eq "Foo" }
         its(:body)    { should eq "Bar baz burp" }
         its(:status)  { should eq "published" }
+      end
+
+      context "with additional_attributes" do
+        its(:additional) { should eq "additional attribute to include" }
+      end
+
+      context "with attributes not in blazed fallback" do
+        its(:not_in_blazed) { should eq "this is not in the blazed instance" }
       end
     end
 
@@ -71,7 +79,7 @@ describe Mongoblazer::ActiveRecord do
 
       context "options" do
         subject { WithEnabledRelation.mongoblazer_options }
-        it { should eq({:indexes=>[], :embeds_one=>[], :embeds_many=>[:related_enableds], :includes=>:related_enableds}) }
+        it { should eq({:indexes=>[], :uploaders=>[], :embeds_one=>{}, :embeds_many=>{:related_enableds=>nil}, :includes=>:related_enableds}) }
       end
 
       context "relations" do
@@ -80,6 +88,5 @@ describe Mongoblazer::ActiveRecord do
         its(:name) { should eq "Related To FooBar" }
       end
     end
-
   end
 end

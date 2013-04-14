@@ -9,9 +9,9 @@ module Mongoblazer
         end
       end
 
-      rake_tasks do
-        load "tasks/mongoblazer.rake"
-      end
+      # rake_tasks do
+      #   load "tasks/mongoblazer.rake"
+      # end
     end
   end
 

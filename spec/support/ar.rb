@@ -14,10 +14,12 @@ ActiveRecord::Schema.define(:version => 0) do
 
   create_table "enableds" do |t|
     t.string "name"
+    t.string "mongoblazer_id"
   end
 
   create_table "with_enabled_relations" do |t|
     t.string "name"
+    t.string "mongoblazer_id"
   end
 
   create_table "related_enableds" do |t|
@@ -62,8 +64,17 @@ class Enabled < ActiveRecord::Base
   has_many :posts
 
   mongoblazer_includes posts: [{comments: :user}, :tags]
+  mongoblazer_additional_attributes [:additional]
 
   after_save :mongoblaze!
+
+  def additional
+    "additional attribute to include"
+  end
+
+  def not_in_blazed
+    "this is not in the blazed instance"
+  end
 end
 
 class EnabledInParent < Enabled

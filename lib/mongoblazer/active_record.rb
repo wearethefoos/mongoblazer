@@ -4,93 +4,172 @@ module Mongoblazer
   #
   module ActiveRecord
     extend ActiveSupport::Concern
+    include Carrierwave
 
     included do
       def mongoblazed
-        self.class.recreate_mongoblazer_class!
+        @mongoblazed ||= begin
+          self.class.recreate_mongoblazer_class!
+          self.class.mongoblazer_class.where(id: self.mongoblazer_id).last
+        end
+      end
 
-        self.class.mongoblazer_class.where(ar_id: id, _type: self.class.mongoblazer_class_name).last
+      def mongoblazed_add_attribute(name, data={})
+        self.class.recreate_mongoblazer_class!
+        instance = self.class.mongoblazer_class.where(id: self.mongoblazer_id).last
+        instance[name] = data
+        instance.save!
+        @mongoblazed = instance
+      end
+
+      ##
+      # Add a relation that is not in the includes options
+      #
+      # Example:
+      # post.mongoblazed.add_include(:comments, post.comments.map(&:attributes))
+      #
+      # Returns the mongoblazed instance with the new include.
+      def mongoblazed_add_include(name, data={})
+        self.class.recreate_mongoblazer_class!
+        relations = {name => data}
+        mongoblaze_relations(mongoblazed, relations)
+        mongoblazed.save!
+        mongoblazed
       end
 
       def mongoblaze!(caller=self.class)
+        if @mongoblazer_already_blazing
+          @mongoblazer_already_blazing = false
+          return true
+        end
+
         self.class.recreate_mongoblazer_class!
 
         data = mongoblazer_attributes
+        relations = {}
 
-        self.class.mongoblazer_options[:embeds_one].each do |em|
+        self.class.mongoblazer_options[:embeds_one].each do |em, class_name|
           if related = data.delete(em)
-            klass = "#{em.to_s.camelize}".constantize
+            klass = class_name ? class_name.constantize : "#{em.to_s.camelize}".constantize
             if klass != caller
-              related_id = related[:id] || related['id']
+              related_id = related['id'] || data["#{em}_id"]
               if klass.mongoblazable? && related_id
-                data[em] = klass.find(related_id).mongoblazer_attributes(self.class)
+                klass.recreate_mongoblazer_class!
+                relations[em] = klass.find(related_id).mongoblazer_attributes(self.class)
               else
-                data[em] = related
+                data[em] = related.attributes
               end
             end
           end
         end
 
-        self.class.mongoblazer_options[:embeds_many].each do |em|
+        self.class.mongoblazer_options[:embeds_many].each do |em, class_name|
           if related = data.delete(em)
-            klass = "#{em.to_s.singularize.camelize}".constantize
+            klass = class_name ? class_name.constantize : "#{em.to_s.singularize.camelize}".constantize
             if klass != caller
               if klass.mongoblazable?
-                data[em] = related.map do |r|
-                  related_id = r[:id] || r['id']
+                klass.recreate_mongoblazer_class!
+                relations[em] = related.map do |r|
+                  related_id = r['id'] || data["#{em.to_s.singularize}_id"]
                   if related_id
                     klass.find(related_id).mongoblazer_attributes(self.class)
                   else
-                    related
+                    r.attributes
                   end
                 end
               else
-                data[em] = related
+                data[em] = related.map(&:attributes)
               end
             end
           end
         end
 
-        blazed_records = self.class.mongoblazer_class.where(ar_id: id)
+        self.class.recreate_mongoblazer_class!
 
-        if blazed_records.size > 1
-          throw "Multiple Mongoblazed documents found with the same id!
-          Set a default scope to filter out unique ones."
-
-        elsif blazed_records.present?
-          blazed_record = blazed_records.first
-          blazed_record.save!(data)
-
-        else
-          blazed_record = self.class.mongoblazer_class.create(data)
-        end
-      end
-
-      def mongoblaze_relations!(blazed_record, relations)
-        if relations.present?
-          relations.each do |name, related|
-            if related.is_a? Array
-              related.each { |r| blazed_record.send(name).build(r) }
-            else
-              blazed_record.send(name).build(related)
-            end
+        blazed_record = if self.mongoblazer_id.present?
+          self.class.mongoblazer_class
+            .where(id: self.mongoblazer_id).first
+          else
+            nil
           end
 
-          blazed_record.save
+        if blazed_record.present?
+          blazed_record.save!(data)
+        else
+          blazed_record = self.class.mongoblazer_class.create(data)
+          @mongoblazer_already_blazing = true
+          update_attribute :mongoblazer_id, blazed_record.id.to_s
+        end
+
+        mongoblaze_relations(blazed_record, relations)
+
+        blazed_record.save!
+
+        blazed_record
+      end
+
+      def mongoblaze_relations(blazed_record, relations)
+        if relations.present?
+          self.class.recreate_mongoblazer_class!
+
+          relations.each do |name, related|
+            next if self.class.mongoblazer_options[:uploaders].include? name
+
+            if related.is_a? Array
+              blazed_record.send(name).destroy_all
+
+              related.each do |r|
+                blazed_record.send(name).build(r)
+              end
+
+            else
+              blazed_record.send("build_#{name}", related)
+            end
+          end
         end
       end
 
       def mongoblazer_attributes(caller=self.class)
         if self.class.mongoblazable?
+          self.class.recreate_mongoblazer_class!
+
           includes = self.class.mongoblazer_options[:includes]
 
           instance = self.class.includes(includes).find(id)
-          data = instance.serializable_hash(:include => includes)
+          data = if includes
+            instance.serializable_hash(:include => includes)
+          else
+            instance.attributes
+          end
+
+          if additional = self.class.mongoblazer_options[:additional_attributes]
+            additional.each do |attribute|
+              next if self.class.mongoblazer_options[:uploaders].include? attribute
+
+              data[attribute] = instance.send(attribute)
+            end
+          end
+
+          if uploaders = self.class.mongoblazer_options[:uploaders]
+            uploaders.each do |uploader|
+              data.delete(uploader)
+              data.delete(uploader.to_s)
+              if instance.send(uploader).present?
+                versions = {}
+                instance.send(uploader).versions.each do |v,u|
+                  versions[v] = u.to_s
+                end
+                versions.merge({default: instance.send(uploader).to_s})
+              end
+            end
+          end
 
           data[:ar_id] = data.delete('id')
 
           data.delete(caller.name.underscore.to_sym)
           data.delete(caller.name.pluralize.underscore.to_sym)
+
+          self.class.recreate_mongoblazer_class!
 
           data
         else
@@ -125,30 +204,38 @@ module Mongoblazer
     end
 
     module ClassMethods
+      def find_blazed(id)
+        ar_instance = select("#{self.table_name}.mongoblazer_id").find(id)
+
+        recreate_mongoblazer_class!
+
+        mongoblazer_class.find(ar_instance.mongoblazer_id)
+      end
+
       ##
       # Is this model Mongoblazable?
       #
       def mongoblazable?
-        mongoblazer_options[:includes].present?
+        mongoblazer_options.present?
       end
 
       def belongs_to(name, options={})
-        mongoblazer_init embeds_one: name
+        mongoblazer_init embeds_one: {name => options[:class_name]}
         super
       end
 
       def has_one(name, options={})
-        mongoblazer_init embeds_one: name
+        mongoblazer_init embeds_one: {name => options[:class_name]}
         super
       end
 
       def has_many(name, options={})
-        mongoblazer_init embeds_many: name
+        mongoblazer_init embeds_many: {name => options[:class_name]}
         super
       end
 
       def has_and_belongs_to_many(name, options={})
-        mongoblazer_init embeds_many: name
+        mongoblazer_init embeds_many: {name => options[:class_name]}
         super
       end
 
@@ -181,6 +268,14 @@ module Mongoblazer
       end
 
       ##
+      # Defines additional attributes (e.g. not in db) to be merged
+      # in the mongodb document.
+      #
+      def mongoblazer_additional_attributes(options={})
+        mongoblazer_init additional_attributes: options
+      end
+
+      ##
       # Initialize Mongoblazer wit some options:
       #   includes: relations to include
       #   default_scope: the default scope for the blazed model
@@ -197,16 +292,22 @@ module Mongoblazer
             {ind => 1}
           end
 
-          @mongoblazer_options[:embeds_one]  = []
-          @mongoblazer_options[:embeds_many] = []
+          @mongoblazer_options[:uploaders] = []
+
+          @mongoblazer_options[:embeds_one]  = {}
+          @mongoblazer_options[:embeds_many] = {}
         end
 
-        if options[:embeds_one]
-          @mongoblazer_options[:embeds_one] << options.delete(:embeds_one)
+        if one = options.delete(:embeds_one)
+          @mongoblazer_options[:embeds_one][one.keys.first] = one.values.first
         end
 
-        if options[:embeds_many]
-          @mongoblazer_options[:embeds_many] << options.delete(:embeds_many)
+        if many = options.delete(:embeds_many)
+          @mongoblazer_options[:embeds_many][many.keys.first] = many.values.first
+        end
+
+        if uploader = options.delete(:uploaders)
+          @mongoblazer_options[:uploaders] << uploader
         end
 
         @mongoblazer_options.merge! options
@@ -232,8 +333,23 @@ module Mongoblazer
         "#{self.name}Blazer"
       end
 
-      def recreate_mongoblazer_class!
-        create_mongoblazer_class! unless mongoblazer_class.embedded_relations?
+      def recreate_mongoblazer_class!(called_from_parent=false)
+        create_mongoblazer_class!
+
+        unless called_from_parent
+          begin
+            configuration[:embeds_one].each do |rel|
+              "#{rel.to_s.camelize}".constantize.recreate_mongoblazer_class!(true)
+            end
+          rescue NameError
+          end
+          begin
+            configuration[:embeds_many].each do |rel|
+              "#{rel.to_s.singularize.camelize}".constantize.recreate_mongoblazer_class!(true)
+            end
+          rescue NameError
+          end
+        end
       end
 
       private # ----------------------------------------------------------------
@@ -244,10 +360,20 @@ module Mongoblazer
         relations  = configure_mongoblazer_relations! configuration[:embeds_one], :embeds_one
         relations += configure_mongoblazer_relations! configuration[:embeds_many], :embeds_many
 
-        if Object.const_defined?(mongoblazer_class_name.to_sym)
-          klass = mongoblazer_class
-        else
-          klass = Class.new ::Mongoblazer::Document do
+        uploaders = configure_mongoblazer_uploaders!
+
+        klass = begin
+          mongoblazer_class
+        rescue NameError
+          collection = mongoblazer_class_name.pluralize.underscore
+
+          klass = Class.new do
+            include ::Mongoblazer::Document
+
+            # Use one collection to avoid class initialization trouble
+            # when guessing the collection to use.
+            store_in collection: collection
+
             index ar_id: 1
             index _type: 1
 
@@ -255,18 +381,27 @@ module Mongoblazer
 
             configuration[:indexes].each { |ind| index ind }
           end
+
+          Object.const_set mongoblazer_class_name, klass
+
+          klass
         end
 
-        klass.class_eval relations.join("\n")
-
-        Object.const_set mongoblazer_class_name, klass
+        klass.module_eval relations.join("\n")
+        klass.module_eval uploaders.join("\n")
       end
 
       def configure_mongoblazer_relations!(relations, embed_type=:embeds_one)
-        relations.map do |em|
-          class_name = embed_type == :embeds_one ? "#{em.to_s.camelize}Blazer" : "#{em.to_s.singularize.camelize}Blazer"
+        relations.map do |em, klass_name|
+          class_name = if klass_name
+            "#{klass_name}Blazer"
+          elsif embed_type == :embeds_one
+            "#{em.to_s.camelize}Blazer"
+          else
+            "#{em.to_s.singularize.camelize}Blazer"
+          end
 
-          if const_defined?(class_name.to_sym)
+          if const_defined?(class_name)
             <<-CODE
               #{embed_type} :#{em}, class_name: '#{class_name}', inverse_of: '#{mongoblazer_class_name}'
               accepts_nested_attributes_for :#{em}
