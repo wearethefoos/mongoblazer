@@ -1,6 +1,6 @@
 # Mongoblazer
 
-TODO: Write a gem description
+Flatten ActiveRecord related database data in (potentially huge) [Mongoid](http://mongoid.org) documents.
 
 ## Installation
 
@@ -18,7 +18,29 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+```ruby
+  class Post
+    belongs_to :author, class_name: 'User'
+    has_many :comments
+
+	mongoblazer_includes              [:author, {comments: :user}]
+    mongoblazer_additional_attributes [:path]
+
+    after_save :mongoblaze!
+
+    def path
+      "/#{created_at.to_date.to_formatted_s(:db)}/#{slug}"
+    end
+  end
+```
+
+```ruby
+  Post.last.mongoblazed
+  # => <PostBlazer…
+  
+  Post.find_blazed(Post.select(:id).last).comments
+  [<CommentBlazer..]
+```
 
 ## Contributing
 
