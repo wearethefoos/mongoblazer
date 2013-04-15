@@ -31,12 +31,16 @@ module Mongoblazer
                 @#{uploader} ||= begin
                   klass = Class.new OpenStruct do
                     def to_s
-                      default
+                      default.url unless default.nil?
                     end
                   end
 
                   klass.new(attributes['#{uploader}'])
                 end
+              end
+
+              def #{uploader}?
+                #{uploader}.to_s.present?
               end
             CODE
           end

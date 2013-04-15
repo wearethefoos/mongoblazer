@@ -157,9 +157,9 @@ module Mongoblazer
               if instance.send(uploader).present?
                 versions = {}
                 instance.send(uploader).versions.each do |v,u|
-                  versions[v] = u.to_s
+                  versions[v] = {url: u.to_s}
                 end
-                versions.merge({default: instance.send(uploader).to_s})
+                versions.merge({default: {url: instance.send(uploader).to_s}})
               end
             end
           end
