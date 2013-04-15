@@ -240,6 +240,32 @@ module Mongoblazer
       end
 
       ##
+      # Add a relation that is not in the includes options and not in the
+      # ActiveRecord model as a relation.
+      #
+      # Example:
+      # mongoblazer_embeds_one :some_method_returning_ar_results => 'ArModel'
+      #
+      def mongoblazer_embeds_one(options={})
+        options.each do |name, klass_name|
+          mongoblazer_init embeds_one: {name => klass_name}
+        end
+      end
+
+      ##
+      # Add a relation that is not in the includes options and not in the
+      # ActiveRecord model as a relation.
+      #
+      # Example:
+      # mongoblazer_embeds_many :some_method_returning_ar_results => 'ArModel'
+      #
+      def mongoblazer_embeds_many(options={})
+        options.each do |name, klass_name|
+          mongoblazer_init embeds_many: {name => klass_name}
+        end
+      end
+
+      ##
       # Defines relation includes to be merged
       # in the mongodb document.
       #
