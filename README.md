@@ -39,7 +39,7 @@ Or install it yourself as:
   # => <PostBlazer…
   
   Post.find_blazed(Post.select(:id).last).comments
-  [<CommentBlazer..]
+  # => [<CommentBlazer..]
 ```
 
 ## Contributing
